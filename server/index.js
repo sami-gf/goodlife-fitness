@@ -61,7 +61,7 @@ if (fs.existsSync(distPath)) {
 }
 
 // ─── Health Check & Server Status ──────────────────────────────────────────────
-app.get('/api/health', async (req, res) => {
+app.get(['/api/health', '/health'], async (req, res) => {
   try {
     const stats = await storage.calculateAnalytics();
     const mongoInfo = getMongoDetails();
@@ -84,7 +84,7 @@ app.get('/api/health', async (req, res) => {
         activeMembers: stats.kpi.activeMembers,
         projectedMRR: stats.kpi.projectedMRR,
       },
-      environment: process.env.NODE_ENV || 'development',
+      environment: process.env.NODE_ENV || (process.env.VERCEL ? 'production' : 'development'),
     });
   } catch (err) {
     const mongoInfo = getMongoDetails();
@@ -100,12 +100,21 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
-// ─── API Routes ────────────────────────────────────────────────────────────────
+// ─── API Routes (Dual-mounted for standalone Express & Vercel Serverless) ─────
 app.use('/api/analytics', analyticsRouter);
+app.use('/analytics', analyticsRouter);
+
 app.use('/api/export', exportRouter);
+app.use('/export', exportRouter);
+
 app.use('/api/members', membersRouter);
+app.use('/members', membersRouter);
+
 app.use('/api/bookings', bookingsRouter);
+app.use('/bookings', bookingsRouter);
+
 app.use('/api/contact', contactRouter);
+app.use('/contact', contactRouter);
 
 // ─── Frontend SPA Routing (Catch-all for non-API routes) ──────────────────────
 app.use((req, res, next) => {
@@ -129,17 +138,19 @@ app.use((err, req, res, next) => {
   res.status(500).json({ success: false, message: 'Internal server error', error: err.message });
 });
 
-// ─── Start Server ──────────────────────────────────────────────────────────────
-app.listen(PORT, () => {
-  console.log(`\n========================================================`);
-  console.log(`🚀 GOODLIFE FITNESS ENTERPRISE BACKEND ONLINE`);
-  console.log(`🌐 Base URL: http://localhost:${PORT}`);
-  console.log(`📊 CRM Analytics: http://localhost:${PORT}/api/analytics`);
-  console.log(`👥 Members API:  http://localhost:${PORT}/api/members`);
-  console.log(`📅 Bookings API: http://localhost:${PORT}/api/bookings`);
-  console.log(`📩 Contact API:  http://localhost:${PORT}/api/contact`);
-  console.log(`💾 Storage: High-Availability Persistent JSON Database`);
-  console.log(`========================================================\n`);
-});
+// ─── Start Server (Only in standalone node mode, not inside Vercel lambdas) ────
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`\n========================================================`);
+    console.log(`🚀 GOODLIFE FITNESS ENTERPRISE BACKEND ONLINE`);
+    console.log(`🌐 Base URL: http://localhost:${PORT}`);
+    console.log(`📊 CRM Analytics: http://localhost:${PORT}/api/analytics`);
+    console.log(`👥 Members API:  http://localhost:${PORT}/api/members`);
+    console.log(`📅 Bookings API: http://localhost:${PORT}/api/bookings`);
+    console.log(`📩 Contact API:  http://localhost:${PORT}/api/contact`);
+    console.log(`💾 Storage: High-Availability Persistent JSON Database`);
+    console.log(`========================================================\n`);
+  });
+}
 
 export default app;

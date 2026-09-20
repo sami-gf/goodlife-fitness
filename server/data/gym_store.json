@@ -204,6 +204,20 @@
   ],
   "auditLogs": [
     {
+      "id": "log-1789911977229-z05h",
+      "action": "MEMBER_DELETED",
+      "details": "Member profile for Friend Test User was removed from CRM.",
+      "category": "crm",
+      "timestamp": "2026-09-20T13:46:17.229Z"
+    },
+    {
+      "id": "log-1789911976956-fkt4",
+      "action": "NEW_LEAD_CAPTURED",
+      "details": "New customer Friend Test User registered for Pro Standard (9840001122).",
+      "category": "crm",
+      "timestamp": "2026-09-20T13:46:16.956Z"
+    },
+    {
       "id": "log-1789884676504-la6c",
       "action": "MEMBER_DELETED",
       "details": "Member profile for System Test Lead was removed from CRM.",

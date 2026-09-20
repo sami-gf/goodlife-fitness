@@ -42,6 +42,7 @@ export default function Layout({ children }) {
   const [toastMessage, setToastMessage] = useState(null);
   const [toastType, setToastType] = useState('success'); // 'success' | 'error'
   const [formSubmitted, setFormSubmitted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
 
   const [formData, setFormData] = useState({
@@ -104,8 +105,8 @@ export default function Layout({ children }) {
     setFormSubmitted(false);
   }, []);
 
-  // ─── Form submit with immediate local persistence & validation ─────────────
-  const handleJoinSubmit = (e) => {
+  // ─── Form submit with live server database registration & feedback ─────────
+  const handleJoinSubmit = async (e) => {
     e.preventDefault();
 
     const cleanName = sanitizeInput(formData.name.trim());
@@ -125,32 +126,43 @@ export default function Layout({ children }) {
       return;
     }
 
-    setFormSubmitted(true);
+    setIsSubmitting(true);
 
-    // Save INSTANTLY to local storage & sync to database
-    registerMember({
-      name: cleanName,
-      email: cleanEmail,
-      phone: cleanPhone,
-      planId: selectedPlanId,
-      goal: formData.goal,
-      preferredTime: formData.preferredTime,
-      branch: formData.branch,
-    });
-
-    showToast(`Welcome to Goodlife Fitness, ${cleanName}! Your registration is saved.`);
-    setTimeout(() => {
-      setJoinModalOpen(false);
-      setFormSubmitted(false);
-      setFormData({
-        name: '',
-        email: '',
-        phone: '',
-        goal: 'Fat Loss & Conditioning',
-        preferredTime: 'Morning (6:00 AM - 9:00 AM)',
-        branch: 'Ghattekulo Main Branch (Kathmandu 44600)'
+    try {
+      const res = await registerMember({
+        name: cleanName,
+        email: cleanEmail,
+        phone: cleanPhone,
+        planId: selectedPlanId,
+        goal: formData.goal,
+        preferredTime: formData.preferredTime,
+        branch: formData.branch,
       });
-    }, 2000);
+
+      setIsSubmitting(false);
+
+      if (res.success) {
+        setFormSubmitted(true);
+        showToast(`Welcome to Goodlife Fitness, ${cleanName}! Registration confirmed.`);
+        setTimeout(() => {
+          setJoinModalOpen(false);
+          setFormSubmitted(false);
+          setFormData({
+            name: '',
+            email: '',
+            phone: '',
+            goal: 'Fat Loss & Conditioning',
+            preferredTime: 'Morning (6:00 AM - 9:00 AM)',
+            branch: 'Ghattekulo Main Branch (Kathmandu 44600)',
+          });
+        }, 2200);
+      } else {
+        showToast(res.error || 'Could not connect to registration server. Please try again.', 'error');
+      }
+    } catch {
+      setIsSubmitting(false);
+      showToast('Connection error. Please check your network.', 'error');
+    }
   };
 
   const memberships = Membership.getAll();
@@ -426,9 +438,17 @@ export default function Layout({ children }) {
                   <div className="pt-1">
                     <button
                       type="submit"
-                      className="w-full py-3.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 font-bold text-sm shadow-xl shadow-emerald-500/25 hover:shadow-emerald-500/40 hover:scale-[1.02] transition-all cursor-pointer"
+                      disabled={isSubmitting}
+                      className="w-full py-3.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 font-bold text-sm shadow-xl shadow-emerald-500/25 hover:shadow-emerald-500/40 hover:scale-[1.02] transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                     >
-                      🔥 Complete NPR Registration
+                      {isSubmitting ? (
+                        <>
+                          <span className="w-4 h-4 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
+                          Confirming Registration with Database...
+                        </>
+                      ) : (
+                        '🔥 Complete NPR Registration'
+                      )}
                     </button>
                   </div>
                 </form>

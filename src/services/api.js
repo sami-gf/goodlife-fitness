@@ -194,7 +194,7 @@ export async function registerMember(memberData) {
     }),
   });
 
-  if (apiRes.success && apiRes.data?.id) {
+  if (apiRes.success && apiRes.data) {
     // Replace temporary local ID with server persistent ID
     try {
       const saved = JSON.parse(localStorage.getItem('goodlife_members') || '[]');
@@ -206,6 +206,16 @@ export async function registerMember(memberData) {
       }
     } catch {}
     return { success: true, data: apiRes.data };
+  }
+
+  // If backend API call failed, do not silently mask failure
+  if (!apiRes.success) {
+    console.warn('Backend API registration warning:', apiRes.error);
+    return {
+      success: false,
+      error: apiRes.error || 'Unable to save registration to server database.',
+      data: localRecord,
+    };
   }
 
   return { success: true, data: localRecord };

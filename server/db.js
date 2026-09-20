@@ -15,6 +15,8 @@ export const getMongoDetails = () => ({
   readyState: mongoose.connection.readyState,
 });
 
+const DEFAULT_MONGO_URI = 'mongodb+srv://samirbhandari836_db_user:RVnJOFsqIje7tRL9@cluster0.w4l6klv.mongodb.net/goodlifefitness?retryWrites=true&w=majority&appName=Cluster0';
+
 let connectionPromise = null;
 
 const connectDB = async () => {
@@ -25,33 +27,32 @@ const connectDB = async () => {
     return connectionPromise;
   }
 
-  const uri = process.env.MONGODB_URI;
+  const uri = process.env.MONGODB_URI || DEFAULT_MONGO_URI;
 
   if (!uri || uri.includes('YOUR_USERNAME') || uri.includes('cluster0.xxxxx')) {
-    console.warn('⚠️  MONGODB_URI is not configured yet in .env.');
+    console.warn('⚠️  MONGODB_URI is not configured yet.');
     console.warn('👉 Operating in High-Availability Local JSON Database mode.');
     return null;
   }
 
-  connectionPromise = (async () => {
-    try {
-      await mongoose.connect(uri, {
-        serverSelectionTimeoutMS: 10000,
-        socketTimeoutMS: 45000,
-        maxPoolSize: 10,
-      });
+  connectionPromise = mongoose
+    .connect(uri, {
+      serverSelectionTimeoutMS: 8000,
+      socketTimeoutMS: 45000,
+      maxPoolSize: 10,
+    })
+    .then((conn) => {
       isConnected = true;
       connectedHost = mongoose.connection.host;
       console.log(`✅ MongoDB Atlas Connected: ${mongoose.connection.host} (DB: ${mongoose.connection.name})`);
-      return mongoose.connection;
-    } catch (error) {
+      return conn;
+    })
+    .catch((error) => {
       console.error(`❌ MongoDB Connection Error: ${error.message}`);
-      console.warn('👉 Running on resilient local persistent storage. Atlas sync will retry on demand.');
-      return null;
-    } finally {
+      console.warn('👉 Running on resilient storage. Will retry on next request.');
       connectionPromise = null;
-    }
-  })();
+      return null;
+    });
 
   return connectionPromise;
 };

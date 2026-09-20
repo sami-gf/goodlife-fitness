@@ -4,7 +4,7 @@ import { fileURLToPath } from 'url';
 import MemberModel from './models/Member.js';
 import BookingModel from './models/Booking.js';
 import ContactModel from './models/Contact.js';
-import { isMongoConnected, getMongoDetails } from './db.js';
+import connectDB, { isMongoConnected, getMongoDetails } from './db.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -152,6 +152,11 @@ class GymStorage {
 
   async init() {
     try {
+      if (process.env.VERCEL) {
+        this.memoryStore = JSON.parse(JSON.stringify(INITIAL_STORE));
+        return;
+      }
+
       if (!fs.existsSync(DATA_DIR)) {
         fs.mkdirSync(DATA_DIR, { recursive: true });
       }
@@ -177,6 +182,7 @@ class GymStorage {
   }
 
   async persist() {
+    if (process.env.VERCEL) return; // Serverless filesystem is read-only
     try {
       if (!fs.existsSync(DATA_DIR)) {
         fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -191,6 +197,13 @@ class GymStorage {
   async ensureReady() {
     if (!this.memoryStore) {
       await this.initPromise;
+    }
+    if (!isMongoConnected()) {
+      try {
+        await connectDB();
+      } catch {
+        // Continue with resilient local memory fallback
+      }
     }
   }
 
@@ -428,7 +441,32 @@ class GymStorage {
   // ─── Members & Leads CRM ─────────────────────────────────────────────────────
   async getMembers({ search = '', status = '', paymentStatus = '', limit = 200, page = 1 } = {}) {
     await this.ensureReady();
-    let list = [...this.memoryStore.members];
+    let list = [];
+
+    // Query live MongoDB Atlas directly when connected
+    if (isMongoConnected()) {
+      try {
+        const mongoList = await MemberModel.find().lean();
+        if (mongoList && mongoList.length > 0) {
+          list = mongoList.map((m) => ({
+            ...m,
+            id: m.id || `mem-${m._id}`,
+            _id: undefined,
+          }));
+        }
+      } catch (err) {
+        console.warn('Direct Atlas member read notice:', err.message);
+      }
+    }
+
+    // Merge in any memory store records not present in Atlas
+    if (this.memoryStore?.members) {
+      for (const lm of this.memoryStore.members) {
+        if (!list.some((m) => (m.id && m.id === lm.id) || (m.email && m.email === lm.email))) {
+          list.push(lm);
+        }
+      }
+    }
 
     if (search) {
       const q = search.toLowerCase().trim();
@@ -476,6 +514,16 @@ class GymStorage {
 
   async getMemberById(id) {
     await this.ensureReady();
+    if (isMongoConnected()) {
+      try {
+        const found = await MemberModel.findOne({ id }).lean();
+        if (found) {
+          return { ...found, id: found.id || `mem-${found._id}`, _id: undefined };
+        }
+      } catch (err) {
+        console.warn('Atlas getMemberById notice:', err.message);
+      }
+    }
     return this.memoryStore.members.find((m) => m.id === id) || null;
   }
 
@@ -706,7 +754,30 @@ class GymStorage {
   // ─── Class Bookings ──────────────────────────────────────────────────────────
   async getBookings({ email = '', classId = '', status = '' } = {}) {
     await this.ensureReady();
-    let list = [...this.memoryStore.bookings];
+    let list = [];
+
+    if (isMongoConnected()) {
+      try {
+        const mongoBookings = await BookingModel.find().lean();
+        if (mongoBookings && mongoBookings.length > 0) {
+          list = mongoBookings.map((b) => ({
+            ...b,
+            id: b.id || `bkg-${b._id}`,
+            _id: undefined,
+          }));
+        }
+      } catch (err) {
+        console.warn('Atlas getBookings notice:', err.message);
+      }
+    }
+
+    if (this.memoryStore?.bookings) {
+      for (const lb of this.memoryStore.bookings) {
+        if (!list.some((b) => (b.id && b.id === lb.id) || (b.memberEmail === lb.memberEmail && b.classId === lb.classId && b.classDay === lb.classDay))) {
+          list.push(lb);
+        }
+      }
+    }
 
     if (email) {
       list = list.filter((b) => b.memberEmail?.toLowerCase() === email.toLowerCase().trim());
@@ -841,7 +912,31 @@ class GymStorage {
   // ─── Contact Inquiries ───────────────────────────────────────────────────────
   async getInquiries() {
     await this.ensureReady();
-    const list = [...this.memoryStore.inquiries];
+    let list = [];
+
+    if (isMongoConnected()) {
+      try {
+        const mongoInquiries = await ContactModel.find().lean();
+        if (mongoInquiries && mongoInquiries.length > 0) {
+          list = mongoInquiries.map((c) => ({
+            ...c,
+            id: c.id || `inq-${c._id}`,
+            _id: undefined,
+          }));
+        }
+      } catch (err) {
+        console.warn('Atlas getInquiries notice:', err.message);
+      }
+    }
+
+    if (this.memoryStore?.inquiries) {
+      for (const li of this.memoryStore.inquiries) {
+        if (!list.some((i) => (i.id && i.id === li.id) || (i.email === li.email && i.message === li.message))) {
+          list.push(li);
+        }
+      }
+    }
+
     list.sort((a, b) => new Date(b.submittedAt || 0) - new Date(a.submittedAt || 0));
     return list;
   }
@@ -935,9 +1030,9 @@ class GymStorage {
   async calculateAnalytics() {
     await this.ensureReady();
 
-    const members = this.memoryStore.members;
-    const bookings = this.memoryStore.bookings;
-    const inquiries = this.memoryStore.inquiries;
+    const { members } = await this.getMembers({ limit: 10000 });
+    const bookings = await this.getBookings();
+    const inquiries = await this.getInquiries();
     const auditLogs = this.memoryStore.auditLogs;
 
     // 1. High-Level KPI Summary
