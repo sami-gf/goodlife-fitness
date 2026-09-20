@@ -185,6 +185,20 @@
   ],
   "auditLogs": [
     {
+      "id": "log-1789884676504-la6c",
+      "action": "MEMBER_DELETED",
+      "details": "Member profile for System Test Lead was removed from CRM.",
+      "category": "crm",
+      "timestamp": "2026-09-20T06:11:16.504Z"
+    },
+    {
+      "id": "log-1789884456259-9r0r",
+      "action": "NEW_LEAD_CAPTURED",
+      "details": "New customer System Test Lead registered for Pro Standard (9811223344).",
+      "category": "crm",
+      "timestamp": "2026-09-20T06:07:36.259Z"
+    },
+    {
       "id": "log-1789879733564-3aae",
       "action": "NEW_LEAD_CAPTURED",
       "details": "New customer Siddhartha Giri registered for Pro Standard (9841556677).",
