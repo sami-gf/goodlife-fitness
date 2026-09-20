@@ -56,6 +56,7 @@ import {
   markInquiryRead,
   deleteInquiry,
   triggerCSVDownload,
+  syncDatabase,
 } from '../services/api';
 
 export default function AdminDashboard() {
@@ -75,7 +76,11 @@ export default function AdminDashboard() {
     connected: false,
     latency: null,
     storageType: 'Persistent Store',
+    isMongo: false,
+    clusterHost: null,
+    storageEngine: null,
   });
+  const [isSyncingCloud, setIsSyncingCloud] = useState(false);
 
   // ─── Data Stores ────────────────────────────────────────────────────────────
   const [members, setMembers] = useState([]);
@@ -86,6 +91,8 @@ export default function AdminDashboard() {
 
   // ─── Search & Pipeline Filters ──────────────────────────────────────────────
   const [searchQuery, setSearchQuery] = useState('');
+  const [bookingSearch, setBookingSearch] = useState('');
+  const [inquirySearch, setInquirySearch] = useState('');
   const [pipelineFilter, setPipelineFilter] = useState('all'); // 'all' | 'new' | 'contacted' | 'active' | 'overdue'
   const [paymentFilter, setPaymentFilter] = useState('all');
 
@@ -134,6 +141,9 @@ export default function AdminDashboard() {
       connected: health.connected,
       latency: health.latency,
       storageType: health.storageType || 'Persistent Store',
+      isMongo: health.isMongo || false,
+      clusterHost: health.clusterHost || null,
+      storageEngine: health.storageEngine || null,
     });
 
     // 2. Fetch CRM Analytics
@@ -225,6 +235,27 @@ export default function AdminDashboard() {
     sessionStorage.removeItem('goodlife_admin_auth');
     setIsAuthenticated(false);
     setPinInput('');
+  };
+
+  // ─── Manual Cloud MongoDB Sync ───────────────────────────────────────────────
+  const handleCloudSync = async () => {
+    setIsSyncingCloud(true);
+    try {
+      const res = await syncDatabase();
+      if (res.success) {
+        showToast(
+          `Cloud Sync Complete: ${res.counts?.members || 0} members, ${res.counts?.bookings || 0} bookings in MongoDB Atlas.`
+        );
+        await loadData();
+      } else {
+        showToast(res.message || 'Sync operation completed with warnings.', 'info');
+        await loadData();
+      }
+    } catch {
+      showToast('Cloud sync request failed.', 'error');
+    } finally {
+      setIsSyncingCloud(false);
+    }
   };
 
   // ─── Quick Member Actions ───────────────────────────────────────────────────
@@ -408,29 +439,65 @@ export default function AdminDashboard() {
   // ─── Filtered Members ───────────────────────────────────────────────────────
   const filteredMembers = useMemo(() => {
     return members.filter((m) => {
-      const q = searchQuery.toLowerCase();
+      const q = searchQuery.toLowerCase().trim();
+      const plan = plansMap[m.planId];
       const matchesSearch =
+        !q ||
         m.name?.toLowerCase().includes(q) ||
-        m.phone?.includes(searchQuery) ||
+        m.phone?.includes(q) ||
         m.email?.toLowerCase().includes(q) ||
         m.goal?.toLowerCase().includes(q) ||
-        m.planId?.toLowerCase().includes(q);
+        m.planId?.toLowerCase().includes(q) ||
+        plan?.name?.toLowerCase().includes(q) ||
+        m.branch?.toLowerCase().includes(q) ||
+        m.paymentMethod?.toLowerCase().includes(q) ||
+        m.paymentStatus?.toLowerCase().includes(q);
 
       const matchesPipeline =
         pipelineFilter === 'all' ||
         (pipelineFilter === 'new' && m.status === 'pending') ||
         (pipelineFilter === 'contacted' && m.status === 'contacted') ||
         (pipelineFilter === 'active' && m.status === 'active') ||
-        (pipelineFilter === 'overdue' && m.paymentStatus === 'Pending' && m.status === 'active');
+        (pipelineFilter === 'overdue' && (m.paymentStatus === 'Pending' || !m.paymentStatus?.startsWith('Paid')));
 
       const matchesPayment =
         paymentFilter === 'all' ||
         (paymentFilter === 'paid' && m.paymentStatus?.startsWith('Paid')) ||
-        (paymentFilter === 'pending' && m.paymentStatus === 'Pending');
+        (paymentFilter === 'pending' && (!m.paymentStatus || m.paymentStatus === 'Pending'));
 
       return matchesSearch && matchesPipeline && matchesPayment;
     });
-  }, [members, searchQuery, pipelineFilter, paymentFilter]);
+  }, [members, searchQuery, pipelineFilter, paymentFilter, plansMap]);
+
+  // ─── Filtered Bookings ──────────────────────────────────────────────────────
+  const filteredBookings = useMemo(() => {
+    if (!bookingSearch.trim()) return bookings;
+    const q = bookingSearch.toLowerCase().trim();
+    return bookings.filter(
+      (b) =>
+        b.memberName?.toLowerCase().includes(q) ||
+        b.className?.toLowerCase().includes(q) ||
+        b.memberEmail?.toLowerCase().includes(q) ||
+        b.memberPhone?.includes(q) ||
+        b.instructorName?.toLowerCase().includes(q) ||
+        b.category?.toLowerCase().includes(q) ||
+        b.status?.toLowerCase().includes(q)
+    );
+  }, [bookings, bookingSearch]);
+
+  // ─── Filtered Inquiries ─────────────────────────────────────────────────────
+  const filteredInquiries = useMemo(() => {
+    if (!inquirySearch.trim()) return inquiries;
+    const q = inquirySearch.toLowerCase().trim();
+    return inquiries.filter(
+      (i) =>
+        i.name?.toLowerCase().includes(q) ||
+        i.email?.toLowerCase().includes(q) ||
+        i.phone?.includes(q) ||
+        i.subject?.toLowerCase().includes(q) ||
+        i.message?.toLowerCase().includes(q)
+    );
+  }, [inquiries, inquirySearch]);
 
   // ─── Computed Analytics Fallback (if backend analytics not yet arrived) ─────
   const analytics = useMemo(() => {
@@ -644,18 +711,51 @@ export default function AdminDashboard() {
 
           {/* Backend Status & Fast Actions */}
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* Live Backend Connection Indicator */}
+            {/* Live Backend & MongoDB Atlas Indicator */}
             <div
               className={`hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[11px] font-mono ${
-                backendStatus.connected
-                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
-                  : 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+                backendStatus.isMongo
+                  ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-300'
+                  : backendStatus.connected
+                  ? 'bg-cyan-500/10 border-cyan-500/40 text-cyan-300'
+                  : 'bg-amber-500/10 border-amber-500/40 text-amber-300'
               }`}
-              title={backendStatus.connected ? 'Express API on Port 5001 is connected' : 'Express backend offline'}
+              title={
+                backendStatus.isMongo
+                  ? `MongoDB Atlas Active (${backendStatus.clusterHost || 'Cluster0'}) • Latency: ${backendStatus.latency}ms`
+                  : backendStatus.connected
+                  ? `Local Express Backend Active • Latency: ${backendStatus.latency}ms`
+                  : 'Operating in Local Storage Offline Mode'
+              }
             >
-              <span className={`w-2 h-2 rounded-full ${backendStatus.connected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
-              <span>{backendStatus.connected ? `Live Backend: ${backendStatus.latency}ms` : 'Local Persistence Mode'}</span>
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  backendStatus.isMongo
+                    ? 'bg-emerald-400 animate-pulse'
+                    : backendStatus.connected
+                    ? 'bg-cyan-400'
+                    : 'bg-amber-400'
+                }`}
+              />
+              <span>
+                {backendStatus.isMongo
+                  ? `Atlas Cloud: ${backendStatus.latency || 45}ms`
+                  : backendStatus.connected
+                  ? `Local API: ${backendStatus.latency || 0}ms`
+                  : 'Local Storage'}
+              </span>
             </div>
+
+            {/* Cloud Sync Button */}
+            <button
+              onClick={handleCloudSync}
+              disabled={isSyncingCloud}
+              className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 hover:text-white hover:border-emerald-500/40 transition-colors cursor-pointer flex items-center gap-1.5 text-xs font-semibold px-3"
+              title="Force Two-Way Synchronization with MongoDB Atlas Cloud"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 text-emerald-400 ${isSyncingCloud ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">{isSyncingCloud ? 'Syncing...' : 'Cloud Sync'}</span>
+            </button>
 
             <button
               onClick={() => setShowAddModal(true)}
@@ -754,10 +854,18 @@ export default function AdminDashboard() {
           </div>
 
           <div className="flex items-center gap-2 text-xs text-slate-400 font-mono">
-            <span>Database:</span>
-            <span className="text-emerald-400 font-semibold flex items-center gap-1">
-              <Database className="w-3 h-3" />
-              {backendStatus.connected ? 'Live Express Engine' : 'Local Persistent Storage'}
+            <span>Database Engine:</span>
+            <span
+              className={`font-semibold flex items-center gap-1.5 ${
+                backendStatus.isMongo ? 'text-emerald-400' : backendStatus.connected ? 'text-cyan-400' : 'text-amber-400'
+              }`}
+            >
+              <Database className="w-3.5 h-3.5" />
+              {backendStatus.isMongo
+                ? 'MongoDB Atlas Cloud (Synchronized)'
+                : backendStatus.connected
+                ? 'Local High-Availability Express Engine'
+                : 'Local Browser Cache'}
             </span>
           </div>
         </div>
@@ -1135,7 +1243,7 @@ export default function AdminDashboard() {
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search by name, phone, email, goal..."
+                  placeholder="Search by name, phone, email, plan (VIP, Pro), branch, eSewa..."
                   className="w-full pl-10 pr-4 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
                 />
               </div>
@@ -1148,7 +1256,10 @@ export default function AdminDashboard() {
                     { id: 'new', label: `New Leads (${members.filter((m) => m.status === 'pending').length})` },
                     { id: 'contacted', label: `Contacted (${members.filter((m) => m.status === 'contacted').length})` },
                     { id: 'active', label: `Active (${members.filter((m) => m.status === 'active').length})` },
-                    { id: 'overdue', label: 'Payment Due' },
+                    {
+                      id: 'overdue',
+                      label: `Payment Due (${members.filter((m) => m.paymentStatus === 'Pending' || !m.paymentStatus?.startsWith('Paid')).length})`,
+                    },
                   ].map((p) => (
                     <button
                       key={p.id}
@@ -1387,7 +1498,7 @@ export default function AdminDashboard() {
         {/* ═══════════════════════════════════════════════════════════════════════ */}
         {activeTab === 'bookings' && (
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
               <div>
                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
                   <CalendarCheck className="w-4 h-4 text-cyan-400" />
@@ -1395,15 +1506,27 @@ export default function AdminDashboard() {
                 </h3>
                 <p className="text-xs text-slate-400">Manage studio spots booked by members</p>
               </div>
-              <span className="text-xs font-mono font-bold text-cyan-400 bg-cyan-950/50 px-3 py-1 rounded-full border border-cyan-500/30">
-                {bookings.length} Total Bookings
-              </span>
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <div className="relative w-full sm:w-64">
+                  <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={bookingSearch}
+                    onChange={(e) => setBookingSearch(e.target.value)}
+                    placeholder="Filter bookings..."
+                    className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-cyan-500"
+                  />
+                </div>
+                <span className="text-xs font-mono font-bold text-cyan-400 bg-cyan-950/50 px-3 py-1.5 rounded-xl border border-cyan-500/30 whitespace-nowrap">
+                  {filteredBookings.length} / {bookings.length} Bookings
+                </span>
+              </div>
             </div>
 
-            {bookings.length === 0 ? (
+            {filteredBookings.length === 0 ? (
               <div className="rounded-3xl border border-dashed border-slate-800 bg-slate-900/30 p-12 text-center space-y-2">
                 <Calendar className="w-12 h-12 text-slate-600 mx-auto" />
-                <h4 className="text-base font-bold text-white">No Class Bookings Yet</h4>
+                <h4 className="text-base font-bold text-white">No Matching Bookings Found</h4>
                 <p className="text-xs text-slate-400">Class bookings made on the /classes schedule will show up here.</p>
               </div>
             ) : (
@@ -1420,7 +1543,7 @@ export default function AdminDashboard() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/60">
-                    {bookings.map((b) => (
+                    {filteredBookings.map((b) => (
                       <tr key={b.id} className="hover:bg-slate-800/30 transition-colors">
                         <td className="px-5 py-4 font-bold text-white">
                           <div>{b.memberName}</div>
@@ -1481,7 +1604,7 @@ export default function AdminDashboard() {
         {/* ═══════════════════════════════════════════════════════════════════════ */}
         {activeTab === 'inquiries' && (
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
               <div>
                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
                   <Mail className="w-4 h-4 text-amber-400" />
@@ -1489,20 +1612,32 @@ export default function AdminDashboard() {
                 </h3>
                 <p className="text-xs text-slate-400">Messages submitted via the public Contact Us form</p>
               </div>
-              <span className="text-xs font-mono font-bold text-amber-400 bg-amber-950/50 px-3 py-1 rounded-full border border-amber-500/30">
-                {inquiries.length} Messages
-              </span>
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <div className="relative w-full sm:w-64">
+                  <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={inquirySearch}
+                    onChange={(e) => setInquirySearch(e.target.value)}
+                    placeholder="Search messages..."
+                    className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+                <span className="text-xs font-mono font-bold text-amber-400 bg-amber-950/50 px-3 py-1.5 rounded-xl border border-amber-500/30 whitespace-nowrap">
+                  {filteredInquiries.length} / {inquiries.length} Messages
+                </span>
+              </div>
             </div>
 
-            {inquiries.length === 0 ? (
+            {filteredInquiries.length === 0 ? (
               <div className="rounded-3xl border border-dashed border-slate-800 bg-slate-900/30 p-12 text-center space-y-2">
                 <Mail className="w-12 h-12 text-slate-600 mx-auto" />
-                <h4 className="text-base font-bold text-white">Inbox Clean</h4>
+                <h4 className="text-base font-bold text-white">No Matching Inquiries Found</h4>
                 <p className="text-xs text-slate-400">When visitors write messages on /contact, they will arrive here.</p>
               </div>
             ) : (
               <div className="space-y-3">
-                {inquiries.map((inq) => (
+                {filteredInquiries.map((inq) => (
                   <div
                     key={inq.id}
                     className={`rounded-2xl border p-5 transition-all space-y-3 ${
@@ -1741,75 +1876,96 @@ export default function AdminDashboard() {
 
             {/* Printable Receipt Area */}
             <div id="print-receipt-area" className="bg-white text-slate-900 p-6 rounded-2xl space-y-4 font-sans text-xs">
-              <div className="text-center border-b pb-3 space-y-1">
-                <h2 className="text-base font-black tracking-tight text-slate-950 uppercase">Goodlife Fitness Pvt. Ltd.</h2>
-                <p className="text-[11px] text-slate-600">Ghattekulo-29, Kathmandu, Nepal • Phone: +977-1-4771234</p>
-                <p className="text-[10px] font-mono text-slate-500">PAN / VAT Reg No: 601284920</p>
-                <div className="pt-1">
-                  <span className="px-2 py-0.5 rounded bg-slate-100 font-mono font-bold text-[10px] text-slate-700 border">
-                    TAX INVOICE & CASH RECEIPT
-                  </span>
-                </div>
-              </div>
+              {(() => {
+                const isPaid = receiptMember.paymentStatus?.startsWith('Paid');
+                const planPrice = plansMap[receiptMember.planId]?.priceMonthlyNPR || 4800;
+                const paidAmount = Number(receiptMember.amountPaid) || (isPaid ? planPrice : 0);
 
-              <div className="grid grid-cols-2 gap-2 text-[11px] border-b pb-3">
-                <div>
-                  <span className="text-slate-500 block">Receipt Number:</span>
-                  <span className="font-mono font-bold text-slate-900">
-                    {receiptMember.receiptNumber || `GLF-2026-${receiptMember.id ? receiptMember.id.slice(-4).toUpperCase() : 'REC1'}`}
-                  </span>
-                </div>
-                <div className="text-right">
-                  <span className="text-slate-500 block">Issue Date:</span>
-                  <span className="font-mono font-bold text-slate-900">{new Date().toLocaleDateString()}</span>
-                </div>
-                <div>
-                  <span className="text-slate-500 block">Member Name:</span>
-                  <span className="font-bold text-slate-900">{receiptMember.name}</span>
-                </div>
-                <div className="text-right">
-                  <span className="text-slate-500 block">Contact Phone:</span>
-                  <span className="font-mono text-slate-900">{receiptMember.phone}</span>
-                </div>
-              </div>
+                return (
+                  <>
+                    <div className="text-center border-b pb-3 space-y-1">
+                      <h2 className="text-base font-black tracking-tight text-slate-950 uppercase">Goodlife Fitness Pvt. Ltd.</h2>
+                      <p className="text-[11px] text-slate-600">Ghattekulo-29, Kathmandu, Nepal • Phone: +977-1-4771234</p>
+                      <p className="text-[10px] font-mono text-slate-500">PAN / VAT Reg No: 601284920</p>
+                      <div className="pt-1">
+                        <span
+                          className={`px-2.5 py-0.5 rounded font-mono font-bold text-[10px] border ${
+                            isPaid
+                              ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                              : 'bg-amber-50 text-amber-800 border-amber-300'
+                          }`}
+                        >
+                          {isPaid ? 'OFFICIAL TAX RECEIPT & PAYMENT CONFIRMATION' : 'PROVISIONAL INVOICE (PAYMENT DUE)'}
+                        </span>
+                      </div>
+                    </div>
 
-              <div className="space-y-2">
-                <table className="w-full text-left text-[11px]">
-                  <thead>
-                    <tr className="border-b text-slate-500">
-                      <th className="pb-1">Description</th>
-                      <th className="pb-1 text-right">Amount</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td className="py-1 font-semibold text-slate-900">
-                        {plansMap[receiptMember.planId]?.name || 'Gym Membership'} (1 Month)
-                      </td>
-                      <td className="py-1 text-right font-mono font-bold">
-                        NPR {(plansMap[receiptMember.planId]?.priceMonthlyNPR || 4800).toLocaleString('en-NP')}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
+                    <div className="grid grid-cols-2 gap-2 text-[11px] border-b pb-3">
+                      <div>
+                        <span className="text-slate-500 block">Receipt / Ref No:</span>
+                        <span className="font-mono font-bold text-slate-900">
+                          {receiptMember.receiptNumber || `GLF-2026-${receiptMember.id ? receiptMember.id.slice(-4).toUpperCase() : 'PEND'}`}
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-slate-500 block">Date of Issue:</span>
+                        <span className="font-mono font-bold text-slate-900">{new Date().toLocaleDateString()}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 block">Member Name:</span>
+                        <span className="font-bold text-slate-900">{receiptMember.name}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-slate-500 block">Contact Phone:</span>
+                        <span className="font-mono text-slate-900">{receiptMember.phone}</span>
+                      </div>
+                    </div>
 
-              <div className="border-t pt-2 space-y-1">
-                <div className="flex justify-between text-xs font-black text-slate-950">
-                  <span>TOTAL PAID:</span>
-                  <span className="font-mono">
-                    NPR {(plansMap[receiptMember.planId]?.priceMonthlyNPR || 4800).toLocaleString('en-NP')}
-                  </span>
-                </div>
-                <div className="text-[10px] text-slate-500">
-                  Payment Method: <span className="font-semibold text-slate-800">{receiptMember.paymentStatus || 'Paid'}</span>
-                </div>
-              </div>
+                    <div className="space-y-2">
+                      <table className="w-full text-left text-[11px]">
+                        <thead>
+                          <tr className="border-b text-slate-500">
+                            <th className="pb-1">Description</th>
+                            <th className="pb-1 text-right">Fee (NPR)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            <td className="py-1 font-semibold text-slate-900">
+                              {plansMap[receiptMember.planId]?.name || 'Gym Membership'} (1 Month)
+                            </td>
+                            <td className="py-1 text-right font-mono font-bold">
+                              NPR {planPrice.toLocaleString('en-NP')}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
 
-              <div className="border-t pt-3 text-center text-[10px] text-slate-500 space-y-0.5">
-                <p>Thank you for joining Goodlife Fitness! Stay Strong 🏋️</p>
-                <p className="font-mono text-[9px]">Ghattekulo Main Branch • 24/7 Access Active</p>
-              </div>
+                    <div className="border-t pt-2 space-y-1">
+                      <div className="flex justify-between text-xs font-black text-slate-950">
+                        <span>{isPaid ? 'TOTAL AMOUNT RECEIVED:' : 'TOTAL AMOUNT DUE:'}</span>
+                        <span className={`font-mono ${isPaid ? 'text-emerald-700' : 'text-amber-700'}`}>
+                          NPR {(isPaid ? paidAmount : planPrice).toLocaleString('en-NP')}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-slate-600 flex justify-between">
+                        <span>Status: <strong className={isPaid ? 'text-emerald-700' : 'text-amber-700'}>{receiptMember.paymentStatus || 'Pending'}</strong></span>
+                        <span>Method: <strong>{receiptMember.paymentMethod || (isPaid ? 'Counter Cash' : 'Unpaid')}</strong></span>
+                      </div>
+                    </div>
+
+                    <div className="border-t pt-3 text-center text-[10px] text-slate-500 space-y-0.5">
+                      <p>
+                        {isPaid
+                          ? 'Thank you for joining Goodlife Fitness! Stay Strong 🏋️'
+                          : 'Payment required at Ghattekulo reception counter before gym access.'}
+                      </p>
+                      <p className="font-mono text-[9px]">Ghattekulo Main Branch, Kathmandu • 24/7 Access Active</p>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
 
             <div className="flex items-center justify-between">

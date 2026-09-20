@@ -2,6 +2,11 @@ import mongoose from 'mongoose';
 
 const contactSchema = new mongoose.Schema(
   {
+    id: {
+      type: String,
+      index: true,
+      sparse: true,
+    },
     name: {
       type: String,
       required: [true, 'Name is required'],
@@ -44,5 +49,5 @@ const contactSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-const Contact = mongoose.model('Contact', contactSchema);
+const Contact = mongoose.models.Contact || mongoose.model('Contact', contactSchema);
 export default Contact;

@@ -27,6 +27,20 @@ router.get('/', requireAdmin, async (req, res) => {
 });
 
 /**
+ * POST /api/analytics/sync
+ * Triggers on-demand two-way sync between MongoDB Atlas and local store
+ */
+router.post('/sync', requireAdmin, async (req, res) => {
+  try {
+    const result = await storage.syncWithMongoDB();
+    return res.json(result);
+  } catch (err) {
+    console.error('Manual sync error:', err);
+    return res.status(500).json({ success: false, message: 'Sync operation failed', error: err.message });
+  }
+});
+
+/**
  * GET /api/analytics/activity
  * Returns recent CRM activity feed
  */

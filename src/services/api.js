@@ -61,6 +61,15 @@ async function request(endpoint, options = {}) {
 
     clearTimeout(timeoutId);
 
+    const contentType = res.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      return {
+        success: false,
+        error: `Server returned non-JSON response (${res.status})`,
+        isHtml: true,
+      };
+    }
+
     const json = await res.json();
     if (!res.ok) {
       return { success: false, error: json.message || `HTTP ${res.status}`, data: json.data };
@@ -75,18 +84,26 @@ async function request(endpoint, options = {}) {
 // ─── Health & Connection Check ────────────────────────────────────────────────
 export async function checkBackendHealth() {
   const startTime = Date.now();
-  const res = await request('/health', { timeout: 2500 });
+  const res = await request('/health', { timeout: 4000 });
   const latency = Date.now() - startTime;
 
-  if (res.success) {
+  if (res.success && res.data) {
     return {
       connected: true,
       latency,
       data: res.data,
-      storageType: res.data?.storage?.type || 'Persistent Live Store',
+      storageType: res.data?.storage?.type || 'Live Persistent Store',
+      isMongo: res.data?.database?.mongoConnected || false,
+      clusterHost: res.data?.database?.clusterHost || null,
+      storageEngine: res.data?.database?.storageEngine || null,
     };
   }
-  return { connected: false, latency: null, error: res.error };
+  return { connected: false, latency: null, isMongo: false, error: res.error };
+}
+
+// ─── Trigger Cloud MongoDB Sync ───────────────────────────────────────────────
+export async function syncDatabase() {
+  return await request('/analytics/sync', { method: 'POST', timeout: 8000 });
 }
 
 // ─── CRM Analytics API ────────────────────────────────────────────────────────

@@ -2,6 +2,11 @@ import mongoose from 'mongoose';
 
 const bookingSchema = new mongoose.Schema(
   {
+    id: {
+      type: String,
+      index: true,
+      sparse: true,
+    },
     // Who booked
     memberName: {
       type: String,
@@ -16,7 +21,6 @@ const bookingSchema = new mongoose.Schema(
     },
     memberPhone: {
       type: String,
-      required: [true, 'Phone is required'],
       trim: true,
     },
     // Which class
@@ -38,12 +42,15 @@ const bookingSchema = new mongoose.Schema(
     },
     classRoom: {
       type: String,
+      default: 'Main Studio',
     },
     instructorName: {
       type: String,
+      default: 'Coach',
     },
     category: {
       type: String,
+      default: 'Fitness',
     },
     // Status
     status: {
@@ -59,5 +66,5 @@ const bookingSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-const Booking = mongoose.model('Booking', bookingSchema);
+const Booking = mongoose.models.Booking || mongoose.model('Booking', bookingSchema);
 export default Booking;

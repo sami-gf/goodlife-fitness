@@ -1,7 +1,5 @@
 import express from 'express';
-import mongoose from 'mongoose';
 import { storage } from '../storage.js';
-import MemberModel from '../models/Member.js';
 import { requireAdmin } from '../middleware/adminAuth.js';
 
 const router = express.Router();
@@ -45,23 +43,6 @@ router.post('/', async (req, res) => {
       paymentMethod: paymentMethod || 'Unpaid',
       notes: notes || '',
     });
-
-    // Also sync to MongoDB if connected
-    if (mongoose.connection.readyState === 1) {
-      try {
-        const mongoMember = new MemberModel({
-          name: newMember.name,
-          email: newMember.email,
-          phone: newMember.phone,
-          planId: newMember.planId,
-          branch: newMember.branch,
-          status: newMember.status,
-        });
-        await mongoMember.save();
-      } catch (mongoErr) {
-        console.warn('MongoDB background sync notice:', mongoErr.message);
-      }
-    }
 
     return res.status(201).json({
       success: true,

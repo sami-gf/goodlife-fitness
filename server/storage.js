@@ -1,6 +1,10 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import MemberModel from './models/Member.js';
+import BookingModel from './models/Booking.js';
+import ContactModel from './models/Contact.js';
+import { isMongoConnected, getMongoDetails } from './db.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -15,7 +19,7 @@ export const PLAN_PRICES = {
   'vip-elite': { name: 'VIP Platinum', monthlyNPR: 8500, category: 'membership' },
 };
 
-// Initial Seed Data (Only loaded if storage file doesn't exist yet)
+// Initial Seed Data (Loaded if storage file doesn't exist yet)
 const INITIAL_STORE = {
   members: [
     {
@@ -107,32 +111,31 @@ const INITIAL_STORE = {
       classId: 'yoga-cl2',
       className: 'Morning Vinyasa Yoga Flow',
       classDay: 'Wednesday',
-      classTime: '07:30 AM',
-      classRoom: 'Mind & Body Studio B',
+      classTime: '07:00 AM',
+      classRoom: 'Zen Yoga Studio (Studio B)',
       instructorName: 'Sunita Gurung',
       category: 'Yoga',
       status: 'confirmed',
-      bookedAt: new Date(Date.now() - 1 * 86400000).toISOString(),
+      bookedAt: new Date(Date.now() - 2 * 86400000).toISOString(),
     }
   ],
   inquiries: [
     {
       id: 'inq-301',
-      name: 'Anita Maharjan',
-      email: 'anita.m@gmail.com',
-      phone: '9841998877',
-      subject: 'Personal Training Packages Inquiry',
-      message: 'Hello, I want to know about certified personal trainers for post-pregnancy weight loss. What are the rates?',
+      name: 'Suman Sharma',
+      email: 'suman.sharma@gmail.com',
+      phone: '9851098765',
+      subject: 'Inquiry on Personal Training for Weight Loss',
+      message: 'Hello Goodlife team, do you provide 1-on-1 personal training packages with customized Nepali diet charts? Looking to join next week.',
       read: true,
-      repliedAt: new Date(Date.now() - 2 * 86400000).toISOString(),
-      submittedAt: new Date(Date.now() - 3 * 86400000).toISOString(),
+      submittedAt: new Date(Date.now() - 2 * 86400000).toISOString(),
     }
   ],
   auditLogs: [
     {
       id: 'log-1',
       action: 'SYSTEM_INIT',
-      details: 'Goodlife Fitness CRM storage initialized with high-availability local persistence.',
+      details: 'Goodlife Fitness CRM storage initialized with high-availability local persistence and MongoDB Atlas sync.',
       category: 'system',
       timestamp: new Date().toISOString(),
     }
@@ -142,6 +145,8 @@ const INITIAL_STORE = {
 class GymStorage {
   constructor() {
     this.memoryStore = null;
+    this.isSyncing = false;
+    this.lastSyncedAt = null;
     this.initPromise = this.init();
   }
 
@@ -158,6 +163,13 @@ class GymStorage {
         this.memoryStore = JSON.parse(JSON.stringify(INITIAL_STORE));
         await this.persist();
       }
+
+      // Schedule background initial sync with MongoDB once connection is active
+      setTimeout(() => {
+        this.syncWithMongoDB().catch((err) => {
+          console.warn('Initial MongoDB sync notice:', err.message);
+        });
+      }, 1500);
     } catch (err) {
       console.error('⚠️ Error initializing persistent gym storage:', err.message);
       this.memoryStore = JSON.parse(JSON.stringify(INITIAL_STORE));
@@ -179,6 +191,214 @@ class GymStorage {
   async ensureReady() {
     if (!this.memoryStore) {
       await this.initPromise;
+    }
+  }
+
+  // ─── Cloud MongoDB Two-Way Synchronization ──────────────────────────────────
+  async syncWithMongoDB() {
+    await this.ensureReady();
+    if (!isMongoConnected()) {
+      return {
+        success: false,
+        message: 'MongoDB is currently offline. Operating on resilient local storage.',
+        isMongo: false,
+        counts: {
+          members: this.memoryStore.members.length,
+          bookings: this.memoryStore.bookings.length,
+          inquiries: this.memoryStore.inquiries.length,
+        },
+      };
+    }
+
+    if (this.isSyncing) {
+      return { success: true, message: 'Sync already in progress.' };
+    }
+
+    this.isSyncing = true;
+    try {
+      // 1. Sync Members
+      const mongoMembers = await MemberModel.find().lean();
+      const localMembers = this.memoryStore.members;
+
+      // Upsert each local member into Atlas
+      for (const m of localMembers) {
+        await MemberModel.findOneAndUpdate(
+          { $or: [{ id: m.id }, { email: m.email }] },
+          {
+            $set: {
+              id: m.id,
+              name: m.name,
+              email: m.email,
+              phone: m.phone,
+              planId: m.planId,
+              branch: m.branch,
+              goal: m.goal,
+              preferredTime: m.preferredTime,
+              status: m.status,
+              paymentStatus: m.paymentStatus,
+              paymentMethod: m.paymentMethod,
+              amountPaid: m.amountPaid,
+              receiptNumber: m.receiptNumber,
+              notes: m.notes,
+              notesHistory: m.notesHistory,
+              registeredAt: m.registeredAt,
+              expiryDate: m.expiryDate,
+            },
+          },
+          { upsert: true, returnDocument: 'after' }
+        );
+      }
+
+      // Merge any member in Atlas back into local store if missing
+      for (const mm of mongoMembers) {
+        const exists = localMembers.some(
+          (lm) => (mm.id && lm.id === mm.id) || lm.email === mm.email
+        );
+        if (!exists) {
+          localMembers.push({
+            id: mm.id || `mem-${mm._id}`,
+            name: mm.name,
+            email: mm.email,
+            phone: mm.phone,
+            planId: mm.planId || 'pro-standard',
+            goal: mm.goal || 'General Health & Fitness',
+            preferredTime: mm.preferredTime || 'Morning (6:00 AM - 9:00 AM)',
+            branch: mm.branch || 'Ghattekulo Main Branch (Kathmandu 44600)',
+            status: mm.status || 'pending',
+            paymentStatus: mm.paymentStatus || 'Pending',
+            paymentMethod: mm.paymentMethod || 'Unpaid',
+            amountPaid: mm.amountPaid || 0,
+            receiptNumber: mm.receiptNumber || null,
+            notes: mm.notes || '',
+            notesHistory: mm.notesHistory || [],
+            registeredAt: mm.registeredAt || mm.createdAt || new Date().toISOString(),
+            expiryDate: mm.expiryDate || null,
+          });
+        }
+      }
+
+      // 2. Sync Bookings
+      const mongoBookings = await BookingModel.find().lean();
+      const localBookings = this.memoryStore.bookings;
+
+      for (const b of localBookings) {
+        await BookingModel.findOneAndUpdate(
+          { $or: [{ id: b.id }, { memberEmail: b.memberEmail, classId: b.classId, classDay: b.classDay }] },
+          {
+            $set: {
+              id: b.id,
+              memberName: b.memberName,
+              memberEmail: b.memberEmail,
+              memberPhone: b.memberPhone,
+              classId: b.classId,
+              className: b.className,
+              classDay: b.classDay,
+              classTime: b.classTime,
+              classRoom: b.classRoom,
+              instructorName: b.instructorName,
+              category: b.category,
+              status: b.status,
+              bookedAt: b.bookedAt,
+            },
+          },
+          { upsert: true, returnDocument: 'after' }
+        );
+      }
+
+      for (const mb of mongoBookings) {
+        const exists = localBookings.some(
+          (lb) => (mb.id && lb.id === mb.id) || (lb.memberEmail === mb.memberEmail && lb.classId === mb.classId && lb.classDay === mb.classDay)
+        );
+        if (!exists) {
+          localBookings.push({
+            id: mb.id || `bkg-${mb._id}`,
+            memberName: mb.memberName,
+            memberEmail: mb.memberEmail,
+            memberPhone: mb.memberPhone,
+            classId: mb.classId,
+            className: mb.className,
+            classDay: mb.classDay,
+            classTime: mb.classTime,
+            classRoom: mb.classRoom || 'Main Studio',
+            instructorName: mb.instructorName || 'Coach',
+            category: mb.category || 'Fitness',
+            status: mb.status || 'confirmed',
+            bookedAt: mb.bookedAt || mb.createdAt || new Date().toISOString(),
+          });
+        }
+      }
+
+      // 3. Sync Contact Inquiries
+      const mongoContacts = await ContactModel.find().lean();
+      const localInquiries = this.memoryStore.inquiries;
+
+      for (const inq of localInquiries) {
+        await ContactModel.findOneAndUpdate(
+          { $or: [{ id: inq.id }, { email: inq.email, message: inq.message }] },
+          {
+            $set: {
+              id: inq.id,
+              name: inq.name,
+              email: inq.email,
+              phone: inq.phone,
+              subject: inq.subject,
+              message: inq.message,
+              read: inq.read,
+              repliedAt: inq.repliedAt,
+              submittedAt: inq.submittedAt,
+            },
+          },
+          { upsert: true, returnDocument: 'after' }
+        );
+      }
+
+      for (const mc of mongoContacts) {
+        const exists = localInquiries.some(
+          (li) => (mc.id && li.id === mc.id) || (li.email === mc.email && li.message === mc.message)
+        );
+        if (!exists) {
+          localInquiries.push({
+            id: mc.id || `inq-${mc._id}`,
+            name: mc.name,
+            email: mc.email,
+            phone: mc.phone || '',
+            subject: mc.subject || 'General Membership Inquiry',
+            message: mc.message || '',
+            read: mc.read || false,
+            repliedAt: mc.repliedAt || null,
+            submittedAt: mc.submittedAt || mc.createdAt || new Date().toISOString(),
+          });
+        }
+      }
+
+      await this.persist();
+      this.lastSyncedAt = new Date().toISOString();
+
+      return {
+        success: true,
+        message: 'MongoDB Atlas and local storage successfully synchronized.',
+        isMongo: true,
+        mongoDetails: getMongoDetails(),
+        counts: {
+          members: localMembers.length,
+          bookings: localBookings.length,
+          inquiries: localInquiries.length,
+        },
+        syncedAt: this.lastSyncedAt,
+      };
+    } catch (err) {
+      console.error('Error during MongoDB sync:', err);
+      return {
+        success: false,
+        message: `Sync warning: ${err.message}`,
+        counts: {
+          members: this.memoryStore.members.length,
+          bookings: this.memoryStore.bookings.length,
+          inquiries: this.memoryStore.inquiries.length,
+        },
+      };
+    } finally {
+      this.isSyncing = false;
     }
   }
 
@@ -205,7 +425,7 @@ class GymStorage {
     return this.memoryStore.auditLogs.slice(0, limit);
   }
 
-  // ─── Members & Leads ─────────────────────────────────────────────────────────
+  // ─── Members & Leads CRM ─────────────────────────────────────────────────────
   async getMembers({ search = '', status = '', paymentStatus = '', limit = 200, page = 1 } = {}) {
     await this.ensureReady();
     let list = [...this.memoryStore.members];
@@ -218,7 +438,9 @@ class GymStorage {
           m.email?.toLowerCase().includes(q) ||
           m.phone?.includes(q) ||
           m.goal?.toLowerCase().includes(q) ||
-          m.planId?.toLowerCase().includes(q)
+          m.planId?.toLowerCase().includes(q) ||
+          m.branch?.toLowerCase().includes(q) ||
+          m.paymentMethod?.toLowerCase().includes(q)
       );
     }
 
@@ -264,7 +486,6 @@ class GymStorage {
     const cleanEmail = (data.email || '').trim().toLowerCase();
     const cleanPhone = (data.phone || '').trim().replace(/[^\d+]/g, '');
 
-    // Check for existing lead with identical email or phone within records
     const existingIndex = this.memoryStore.members.findIndex(
       (m) => (m.email && m.email === cleanEmail) || (cleanPhone && m.phone === cleanPhone)
     );
@@ -276,7 +497,7 @@ class GymStorage {
     expiry.setDate(expiry.getDate() + 30);
 
     const newMember = {
-      id: `mem-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      id: data.id || `mem-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       name: cleanName,
       email: cleanEmail,
       phone: cleanPhone,
@@ -284,8 +505,8 @@ class GymStorage {
       goal: data.goal || 'General Health & Fitness',
       preferredTime: data.preferredTime || 'Morning (6:00 AM - 9:00 AM)',
       branch: data.branch || 'Ghattekulo Main Branch (Kathmandu 44600)',
-      status: data.status || 'pending', // 'pending' | 'contacted' | 'active' | 'cancelled'
-      paymentStatus: data.paymentStatus || 'Pending', // 'Pending' | 'Paid (eSewa)' | 'Paid (Khalti)' | 'Paid (Cash)' | 'Paid (Bank)'
+      status: data.status || 'pending',
+      paymentStatus: data.paymentStatus || 'Pending',
       paymentMethod: data.paymentMethod || 'Unpaid',
       amountPaid: data.amountPaid || (data.paymentStatus?.startsWith('Paid') ? planInfo.monthlyNPR : 0),
       receiptNumber: data.paymentStatus?.startsWith('Paid')
@@ -305,10 +526,9 @@ class GymStorage {
     };
 
     if (existingIndex !== -1) {
-      // Update existing record if it was pending
       const existing = this.memoryStore.members[existingIndex];
       if (existing.status === 'pending') {
-        this.memoryStore.members[existingIndex] = {
+        const mergedMember = {
           ...existing,
           ...newMember,
           id: existing.id,
@@ -323,9 +543,23 @@ class GymStorage {
             },
           ],
         };
+        this.memoryStore.members[existingIndex] = mergedMember;
         await this.persist();
         await this.logActivity('LEAD_RESUBMITTED', `Existing lead ${cleanName} resubmitted interest in ${planInfo.name}.`);
-        return this.memoryStore.members[existingIndex];
+
+        if (isMongoConnected()) {
+          try {
+            await MemberModel.findOneAndUpdate(
+              { $or: [{ id: mergedMember.id }, { email: mergedMember.email }] },
+              { $set: mergedMember },
+              { upsert: true }
+            );
+          } catch (err) {
+            console.warn('Atlas member upsert notice:', err.message);
+          }
+        }
+
+        return mergedMember;
       }
     }
 
@@ -336,6 +570,19 @@ class GymStorage {
       'NEW_LEAD_CAPTURED',
       `New customer ${cleanName} registered for ${planInfo.name} (${cleanPhone}).`
     );
+
+    // Synchronize to MongoDB Atlas immediately
+    if (isMongoConnected()) {
+      try {
+        await MemberModel.findOneAndUpdate(
+          { $or: [{ id: newMember.id }, { email: newMember.email }] },
+          { $set: newMember },
+          { upsert: true, returnDocument: 'after' }
+        );
+      } catch (err) {
+        console.warn('Atlas member create notice:', err.message);
+      }
+    }
 
     return newMember;
   }
@@ -348,13 +595,12 @@ class GymStorage {
     const current = this.memoryStore.members[index];
     const planInfo = PLAN_PRICES[updates.planId || current.planId] || PLAN_PRICES['pro-standard'];
 
-    // Auto generate receipt number if transitioning to Paid
     let receiptNumber = current.receiptNumber;
     let amountPaid = current.amountPaid;
 
     if (updates.paymentStatus && updates.paymentStatus.startsWith('Paid') && !current.receiptNumber) {
       receiptNumber = `GLF-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
-      amountPaid = planInfo.monthlyNPR;
+      amountPaid = updates.amountPaid !== undefined ? updates.amountPaid : planInfo.monthlyNPR;
     }
 
     const updated = {
@@ -368,7 +614,6 @@ class GymStorage {
     this.memoryStore.members[index] = updated;
     await this.persist();
 
-    // Log meaningful activity
     if (updates.status && updates.status !== current.status) {
       await this.logActivity(
         'MEMBER_STATUS_CHANGED',
@@ -380,6 +625,19 @@ class GymStorage {
         'PAYMENT_RECORDED',
         `Payment marked for ${current.name}: ${updates.paymentStatus} (NPR ${updated.amountPaid}).`
       );
+    }
+
+    // Synchronize update to Atlas
+    if (isMongoConnected()) {
+      try {
+        await MemberModel.findOneAndUpdate(
+          { $or: [{ id: id }, { email: current.email }] },
+          { $set: updated },
+          { returnDocument: 'after' }
+        );
+      } catch (err) {
+        console.warn('Atlas member update notice:', err.message);
+      }
     }
 
     return updated;
@@ -409,6 +667,18 @@ class GymStorage {
     await this.persist();
 
     await this.logActivity('NOTE_ADDED', `Note logged on profile of ${current.name}: "${noteText.slice(0, 50)}..."`);
+
+    if (isMongoConnected()) {
+      try {
+        await MemberModel.findOneAndUpdate(
+          { $or: [{ id: id }, { email: current.email }] },
+          { $set: { notes: current.notes, notesHistory: current.notesHistory, updatedAt: current.updatedAt } }
+        );
+      } catch (err) {
+        console.warn('Atlas note update notice:', err.message);
+      }
+    }
+
     return current;
   }
 
@@ -421,6 +691,15 @@ class GymStorage {
     await this.persist();
 
     await this.logActivity('MEMBER_DELETED', `Member profile for ${removed.name} was removed from CRM.`);
+
+    if (isMongoConnected()) {
+      try {
+        await MemberModel.deleteOne({ $or: [{ id: id }, { email: removed.email }] });
+      } catch (err) {
+        console.warn('Atlas member delete notice:', err.message);
+      }
+    }
+
     return true;
   }
 
@@ -430,12 +709,12 @@ class GymStorage {
     let list = [...this.memoryStore.bookings];
 
     if (email) {
-      list = list.filter((b) => b.memberEmail?.toLowerCase() === email.toLowerCase());
+      list = list.filter((b) => b.memberEmail?.toLowerCase() === email.toLowerCase().trim());
     }
     if (classId) {
       list = list.filter((b) => b.classId === classId);
     }
-    if (status) {
+    if (status && status !== 'all') {
       list = list.filter((b) => b.status === status);
     }
 
@@ -450,7 +729,6 @@ class GymStorage {
     const cleanPhone = (data.memberPhone || '').trim();
     const cleanName = (data.memberName || '').trim();
 
-    // Check duplicate reservation
     const duplicate = this.memoryStore.bookings.find(
       (b) =>
         b.memberEmail?.toLowerCase() === cleanEmail &&
@@ -475,7 +753,7 @@ class GymStorage {
       classRoom: data.classRoom || 'Main Studio',
       instructorName: data.instructorName || 'Goodlife Trainer',
       category: data.category || 'Fitness',
-      status: 'confirmed', // 'confirmed' | 'attended' | 'cancelled'
+      status: 'confirmed',
       bookedAt: new Date().toISOString(),
     };
 
@@ -486,6 +764,18 @@ class GymStorage {
       'CLASS_BOOKED',
       `${cleanName} reserved spot for ${data.className} (${data.classDay} at ${data.classTime}).`
     );
+
+    if (isMongoConnected()) {
+      try {
+        await BookingModel.findOneAndUpdate(
+          { id: newBooking.id },
+          { $set: newBooking },
+          { upsert: true, returnDocument: 'after' }
+        );
+      } catch (err) {
+        console.warn('Atlas booking create notice:', err.message);
+      }
+    }
 
     return { duplicate: false, booking: newBooking };
   }
@@ -512,6 +802,18 @@ class GymStorage {
       );
     }
 
+    if (isMongoConnected()) {
+      try {
+        await BookingModel.findOneAndUpdate(
+          { id: id },
+          { $set: updated },
+          { returnDocument: 'after' }
+        );
+      } catch (err) {
+        console.warn('Atlas booking update notice:', err.message);
+      }
+    }
+
     return updated;
   }
 
@@ -524,6 +826,15 @@ class GymStorage {
     await this.persist();
 
     await this.logActivity('BOOKING_CANCELLED', `Cancelled booking for ${removed.memberName} (${removed.className}).`);
+
+    if (isMongoConnected()) {
+      try {
+        await BookingModel.deleteOne({ id: id });
+      } catch (err) {
+        console.warn('Atlas booking delete notice:', err.message);
+      }
+    }
+
     return true;
   }
 
@@ -555,6 +866,19 @@ class GymStorage {
     await this.persist();
 
     await this.logActivity('INQUIRY_RECEIVED', `Inquiry from ${cleanName} regarding "${newInquiry.subject}".`);
+
+    if (isMongoConnected()) {
+      try {
+        await ContactModel.findOneAndUpdate(
+          { id: newInquiry.id },
+          { $set: newInquiry },
+          { upsert: true, returnDocument: 'after' }
+        );
+      } catch (err) {
+        console.warn('Atlas inquiry create notice:', err.message);
+      }
+    }
+
     return newInquiry;
   }
 
@@ -572,6 +896,19 @@ class GymStorage {
 
     this.memoryStore.inquiries[index] = updated;
     await this.persist();
+
+    if (isMongoConnected()) {
+      try {
+        await ContactModel.findOneAndUpdate(
+          { id: id },
+          { $set: updated },
+          { returnDocument: 'after' }
+        );
+      } catch (err) {
+        console.warn('Atlas inquiry update notice:', err.message);
+      }
+    }
+
     return updated;
   }
 
@@ -582,6 +919,15 @@ class GymStorage {
 
     this.memoryStore.inquiries.splice(index, 1);
     await this.persist();
+
+    if (isMongoConnected()) {
+      try {
+        await ContactModel.deleteOne({ id: id });
+      } catch (err) {
+        console.warn('Atlas inquiry delete notice:', err.message);
+      }
+    }
+
     return true;
   }
 
@@ -647,7 +993,6 @@ class GymStorage {
         projectedMRR += plan.price;
       }
 
-      // Check payment status
       if (m.paymentStatus && m.paymentStatus.startsWith('Paid')) {
         const paidAmount = Number(m.amountPaid) || plan.price;
         totalCollected += paidAmount;
@@ -672,21 +1017,18 @@ class GymStorage {
         paymentMethodMap['Pending'].totalNPR += plan.price;
       }
 
-      // Workout Timing
       if (m.preferredTime && timeDistributionMap[m.preferredTime] !== undefined) {
         timeDistributionMap[m.preferredTime] += 1;
       } else {
         timeDistributionMap['Flexible'] += 1;
       }
 
-      // Fitness Goal
       if (m.goal && goalDistributionMap[m.goal] !== undefined) {
         goalDistributionMap[m.goal] += 1;
       } else if (m.goal) {
         goalDistributionMap[m.goal] = (goalDistributionMap[m.goal] || 0) + 1;
       }
 
-      // Branch
       const bName = m.branch || 'Ghattekulo Main Branch (Kathmandu 44600)';
       branchDistributionMap[bName] = (branchDistributionMap[bName] || 0) + 1;
     });
@@ -700,7 +1042,6 @@ class GymStorage {
     const cancelledBookings = bookings.filter((b) => b.status === 'cancelled').length;
     const attendanceRate = totalBookings > 0 ? ((attendedBookings / totalBookings) * 100).toFixed(1) : 0;
 
-    // Popular Classes
     const classStatsMap = {};
     bookings.forEach((b) => {
       if (!classStatsMap[b.className]) {
@@ -721,7 +1062,7 @@ class GymStorage {
       .slice(0, 5);
 
     // 3. 5-Stage Sales Funnel
-    const funnelStage1 = inquiries.length + totalLeads + 12; // base web traffic + inquiries
+    const funnelStage1 = inquiries.length + totalLeads + 12;
     const funnelStage2 = totalLeads;
     const funnelStage3 = contactedLeads + activeMembers;
     const funnelStage4 = Math.max(attendedBookings, Math.round(activeMembers * 0.8));
@@ -755,33 +1096,29 @@ class GymStorage {
       },
     ];
 
-    // 4. Time Distribution Array
     const peakHours = Object.entries(timeDistributionMap).map(([slot, count]) => ({
       slot,
       count,
       percentage: totalLeads > 0 ? Math.round((count / totalLeads) * 100) : 0,
     }));
 
-    // 5. Goals Distribution Array
-    const topGoals = Object.entries(goalDistributionMap)
-      .map(([goal, count]) => ({
-        goal,
-        count,
-        percentage: totalLeads > 0 ? Math.round((count / totalLeads) * 100) : 0,
-      }))
-      .sort((a, b) => b.count - a.count);
+    const topGoals = Object.entries(goalDistributionMap).map(([goal, count]) => ({
+      goal,
+      count,
+      percentage: totalLeads > 0 ? Math.round((count / totalLeads) * 100) : 0,
+    }));
 
-    // 6. Plan Distribution Array
     const planBreakdown = Object.values(planRevenueMap).map((p) => ({
       ...p,
       percentage: totalLeads > 0 ? Math.round((p.count / totalLeads) * 100) : 0,
     }));
 
-    // 7. Payment Distribution Array
     const paymentBreakdown = Object.values(paymentMethodMap).map((pm) => ({
       ...pm,
       percentage: totalLeads > 0 ? Math.round((pm.count / totalLeads) * 100) : 0,
     }));
+
+    const mongoStatus = getMongoDetails();
 
     return {
       kpi: {
@@ -822,7 +1159,10 @@ class GymStorage {
       },
       recentActivity: auditLogs.slice(0, 15),
       storageInfo: {
-        mode: 'High-Availability Local JSON Persistent Store',
+        mode: mongoStatus.connected ? 'MongoDB Atlas (Cloud Synchronized)' : 'High-Availability Local JSON Persistent Store',
+        isMongo: mongoStatus.connected,
+        mongoDetails: mongoStatus,
+        lastSyncedAt: this.lastSyncedAt,
         path: DATA_FILE,
         lastUpdated: new Date().toISOString(),
       },

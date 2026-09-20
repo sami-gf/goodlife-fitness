@@ -7,7 +7,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { rateLimit } from 'express-rate-limit';
-import connectDB from './db.js';
+import connectDB, { getMongoDetails } from './db.js';
 import membersRouter from './routes/members.js';
 import bookingsRouter from './routes/bookings.js';
 import contactRouter from './routes/contact.js';
@@ -64,14 +64,22 @@ if (fs.existsSync(distPath)) {
 app.get('/api/health', async (req, res) => {
   try {
     const stats = await storage.calculateAnalytics();
+    const mongoInfo = getMongoDetails();
     return res.json({
       success: true,
       status: 'Goodlife Fitness Enterprise Backend Active 🏋️',
-      version: '2.0.0',
+      version: '2.1.0',
       port: PORT,
       timestamp: new Date().toISOString(),
+      database: {
+        mongoConnected: mongoInfo.connected,
+        clusterHost: mongoInfo.host,
+        dbName: mongoInfo.name,
+        storageEngine: mongoInfo.connected ? 'MongoDB Atlas (Cloud Active)' : 'High-Availability Local JSON Database',
+        lastSyncedAt: stats.storageInfo?.lastSyncedAt || null,
+      },
       storage: {
-        type: 'Dual-Engine Persistent High-Availability Store',
+        type: mongoInfo.connected ? 'MongoDB Atlas + Resilient Local Mirror' : 'Local High-Availability Store',
         totalMembers: stats.kpi.totalLeads,
         activeMembers: stats.kpi.activeMembers,
         projectedMRR: stats.kpi.projectedMRR,
@@ -79,9 +87,14 @@ app.get('/api/health', async (req, res) => {
       environment: process.env.NODE_ENV || 'development',
     });
   } catch (err) {
+    const mongoInfo = getMongoDetails();
     return res.json({
       success: true,
       status: 'Goodlife Fitness API is running 🏋️',
+      database: {
+        mongoConnected: mongoInfo.connected,
+        clusterHost: mongoInfo.host,
+      },
       timestamp: new Date().toISOString(),
     });
   }

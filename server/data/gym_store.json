@@ -136,6 +136,25 @@
       ],
       "registeredAt": "2026-09-15T18:38:29.552Z",
       "expiryDate": "2026-10-15T18:38:29.552Z"
+    },
+    {
+      "id": "mem-6aaf7828b89f4192c5ed1e8e",
+      "name": "System Test Lead",
+      "email": "test.verify@example.com",
+      "phone": "9811223344",
+      "planId": "pro-standard",
+      "goal": "General Health & Fitness",
+      "preferredTime": "Morning (6:00 AM - 9:00 AM)",
+      "branch": "Ghattekulo Main Branch (Kathmandu 44600)",
+      "status": "pending",
+      "paymentStatus": "Pending",
+      "paymentMethod": "Unpaid",
+      "amountPaid": 0,
+      "receiptNumber": null,
+      "notes": "",
+      "notesHistory": [],
+      "registeredAt": "2026-09-20T06:07:36.261Z",
+      "expiryDate": null
     }
   ],
   "bookings": [
