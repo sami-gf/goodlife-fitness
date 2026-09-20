@@ -1,0 +1,251 @@
+{
+  "members": [
+    {
+      "id": "mem-1789879733561-94lk",
+      "name": "Siddhartha Giri",
+      "email": "siddhartha.g@gmail.com",
+      "phone": "9841556677",
+      "planId": "pro-standard",
+      "goal": "Fat Loss & Conditioning",
+      "preferredTime": "Morning (6:00 AM - 9:00 AM)",
+      "branch": "Ghattekulo Main Branch (Kathmandu 44600)",
+      "status": "pending",
+      "paymentStatus": "Pending",
+      "paymentMethod": "Unpaid",
+      "amountPaid": 0,
+      "receiptNumber": null,
+      "notes": "",
+      "notesHistory": [
+        {
+          "id": "nh-1789879733561",
+          "text": "Member lead registered via website portal.",
+          "author": "Web Portal",
+          "timestamp": "2026-09-20T04:48:53.561Z"
+        }
+      ],
+      "registeredAt": "2026-09-20T04:48:53.561Z",
+      "expiryDate": "2026-10-20T04:48:53.561Z"
+    },
+    {
+      "id": "mem-1789756923004-q6y2",
+      "name": "Aayush Maharjan",
+      "email": "aayush.m@gmail.com",
+      "phone": "9841889900",
+      "planId": "pro-standard",
+      "goal": "Muscle Building & Hypertrophy",
+      "preferredTime": "Morning (6:00 AM - 9:00 AM)",
+      "branch": "Ghattekulo Main Branch (Kathmandu 44600)",
+      "status": "active",
+      "paymentStatus": "Paid (eSewa)",
+      "paymentMethod": "eSewa Digital Wallet",
+      "amountPaid": 4800,
+      "receiptNumber": "GLF-2026-9351",
+      "notes": "",
+      "notesHistory": [
+        {
+          "id": "nh-1789756923004",
+          "text": "Member lead registered via website portal.",
+          "author": "Web Portal",
+          "timestamp": "2026-09-18T18:42:03.004Z"
+        }
+      ],
+      "registeredAt": "2026-09-18T18:42:03.004Z",
+      "expiryDate": "2026-10-18T18:42:03.004Z",
+      "updatedAt": "2026-09-18T18:42:09.199Z"
+    },
+    {
+      "id": "mem-1001",
+      "name": "Bikash Adhikari",
+      "email": "bikash.adhikari@gmail.com",
+      "phone": "9841234567",
+      "planId": "pro-standard",
+      "goal": "Fat Loss & Conditioning",
+      "preferredTime": "Morning (6:00 AM - 9:00 AM)",
+      "branch": "Ghattekulo Main Branch (Kathmandu 44600)",
+      "status": "active",
+      "paymentStatus": "Paid (eSewa)",
+      "paymentMethod": "eSewa Digital Wallet",
+      "amountPaid": 4800,
+      "receiptNumber": "GLF-2026-0812",
+      "notes": "Requested trainer induction on Monday morning.",
+      "notesHistory": [
+        {
+          "id": "n1",
+          "text": "Enrolled via online portal. Payment received via eSewa.",
+          "author": "System",
+          "timestamp": "2026-09-06T18:38:29.550Z"
+        }
+      ],
+      "registeredAt": "2026-09-06T18:38:29.552Z",
+      "expiryDate": "2026-10-06T18:38:29.552Z"
+    },
+    {
+      "id": "mem-1002",
+      "name": "Pooja Thapa",
+      "email": "pooja.thapa@outlook.com",
+      "phone": "9813987654",
+      "planId": "vip-elite",
+      "goal": "Muscle Building & Hypertrophy",
+      "preferredTime": "Evening (5:00 PM - 8:00 PM)",
+      "branch": "Ghattekulo Main Branch (Kathmandu 44600)",
+      "status": "active",
+      "paymentStatus": "Paid (Khalti)",
+      "paymentMethod": "Khalti Digital Wallet",
+      "amountPaid": 8500,
+      "receiptNumber": "GLF-2026-0813",
+      "notes": "VIP locker assigned #14. Sauna access active.",
+      "notesHistory": [
+        {
+          "id": "n2",
+          "text": "VIP enrollment completed with Khalti.",
+          "author": "System",
+          "timestamp": "2026-09-10T18:38:29.552Z"
+        }
+      ],
+      "registeredAt": "2026-09-10T18:38:29.552Z",
+      "expiryDate": "2026-10-10T18:38:29.552Z"
+    },
+    {
+      "id": "mem-1003",
+      "name": "Rohan Shrestha",
+      "email": "rohan.shrestha@gmail.com",
+      "phone": "9860112233",
+      "planId": "basic-fit",
+      "goal": "General Health & Fitness",
+      "preferredTime": "Morning (6:00 AM - 9:00 AM)",
+      "branch": "Ghattekulo Main Branch (Kathmandu 44600)",
+      "status": "contacted",
+      "paymentStatus": "Pending",
+      "paymentMethod": "Cash at Counter",
+      "amountPaid": 0,
+      "receiptNumber": null,
+      "notes": "Called on WhatsApp. Coming for facility tour tomorrow at 7:30 AM.",
+      "notesHistory": [
+        {
+          "id": "n3",
+          "text": "Submitted website join form.",
+          "author": "System",
+          "timestamp": "2026-09-15T18:38:29.552Z"
+        },
+        {
+          "id": "n4",
+          "text": "Reception called to confirm gym tour timing.",
+          "author": "Receptionist",
+          "timestamp": "2026-09-17T18:38:29.552Z"
+        }
+      ],
+      "registeredAt": "2026-09-15T18:38:29.552Z",
+      "expiryDate": "2026-10-15T18:38:29.552Z"
+    }
+  ],
+  "bookings": [
+    {
+      "id": "bkg-201",
+      "memberName": "Bikash Adhikari",
+      "memberEmail": "bikash.adhikari@gmail.com",
+      "memberPhone": "9841234567",
+      "classId": "crossfit-cl1",
+      "className": "High-Intensity CrossFit",
+      "classDay": "Monday",
+      "classTime": "06:30 AM",
+      "classRoom": "Functional Training Arena (Studio A)",
+      "instructorName": "Ramesh Thapa",
+      "category": "CrossFit",
+      "status": "attended",
+      "bookedAt": "2026-09-14T18:38:29.552Z"
+    },
+    {
+      "id": "bkg-202",
+      "memberName": "Pooja Thapa",
+      "memberEmail": "pooja.thapa@outlook.com",
+      "memberPhone": "9813987654",
+      "classId": "yoga-cl2",
+      "className": "Morning Vinyasa Yoga Flow",
+      "classDay": "Wednesday",
+      "classTime": "07:30 AM",
+      "classRoom": "Mind & Body Studio B",
+      "instructorName": "Sunita Gurung",
+      "category": "Yoga",
+      "status": "confirmed",
+      "bookedAt": "2026-09-17T18:38:29.552Z"
+    }
+  ],
+  "inquiries": [
+    {
+      "id": "inq-301",
+      "name": "Anita Maharjan",
+      "email": "anita.m@gmail.com",
+      "phone": "9841998877",
+      "subject": "Personal Training Packages Inquiry",
+      "message": "Hello, I want to know about certified personal trainers for post-pregnancy weight loss. What are the rates?",
+      "read": true,
+      "repliedAt": "2026-09-16T18:38:29.552Z",
+      "submittedAt": "2026-09-15T18:38:29.552Z"
+    }
+  ],
+  "auditLogs": [
+    {
+      "id": "log-1789879733564-3aae",
+      "action": "NEW_LEAD_CAPTURED",
+      "details": "New customer Siddhartha Giri registered for Pro Standard (9841556677).",
+      "category": "crm",
+      "timestamp": "2026-09-20T04:48:53.564Z"
+    },
+    {
+      "id": "log-1789756929200-96dw",
+      "action": "PAYMENT_RECORDED",
+      "details": "Payment marked for Aayush Maharjan: Paid (eSewa) (NPR 4800).",
+      "category": "crm",
+      "timestamp": "2026-09-18T18:42:09.200Z"
+    },
+    {
+      "id": "log-1789756929200-4gj3",
+      "action": "MEMBER_STATUS_CHANGED",
+      "details": "Member Aayush Maharjan status updated from \"pending\" to \"active\".",
+      "category": "crm",
+      "timestamp": "2026-09-18T18:42:09.200Z"
+    },
+    {
+      "id": "log-1789756923005-7gae",
+      "action": "NEW_LEAD_CAPTURED",
+      "details": "New customer Aayush Maharjan registered for Pro Standard (9841889900).",
+      "category": "crm",
+      "timestamp": "2026-09-18T18:42:03.005Z"
+    },
+    {
+      "id": "log-1789756743594-0d3g",
+      "action": "MEMBER_DELETED",
+      "details": "Member profile for Test Lead Sam was removed from CRM.",
+      "category": "crm",
+      "timestamp": "2026-09-18T18:39:03.594Z"
+    },
+    {
+      "id": "log-1789756740086-5qr4",
+      "action": "PAYMENT_RECORDED",
+      "details": "Payment marked for Test Lead Sam: Paid (eSewa) (NPR 4800).",
+      "category": "crm",
+      "timestamp": "2026-09-18T18:39:00.086Z"
+    },
+    {
+      "id": "log-1789756740086-rygb",
+      "action": "MEMBER_STATUS_CHANGED",
+      "details": "Member Test Lead Sam status updated from \"pending\" to \"active\".",
+      "category": "crm",
+      "timestamp": "2026-09-18T18:39:00.086Z"
+    },
+    {
+      "id": "log-1789756740085-i291",
+      "action": "NEW_LEAD_CAPTURED",
+      "details": "New customer Test Lead Sam registered for Pro Standard (9800000000).",
+      "category": "crm",
+      "timestamp": "2026-09-18T18:39:00.085Z"
+    },
+    {
+      "id": "log-1",
+      "action": "SYSTEM_INIT",
+      "details": "Goodlife Fitness CRM storage initialized with high-availability local persistence.",
+      "category": "system",
+      "timestamp": "2026-09-18T18:38:29.552Z"
+    }
+  ]
+}
