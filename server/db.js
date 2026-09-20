@@ -15,7 +15,7 @@ export const getMongoDetails = () => ({
   readyState: mongoose.connection.readyState,
 });
 
-const DEFAULT_MONGO_URI = 'mongodb+srv://samirbhandari836_db_user:RVnJOFsqIje7tRL9@cluster0.w4l6klv.mongodb.net/goodlifefitness?retryWrites=true&w=majority&appName=Cluster0';
+const DEFAULT_MONGO_URI = 'mongodb+srv://samirbhandari666_db_user:9ZnsPrZ87GziDtsu@cluster0.sl6gxgc.mongodb.net/goodlifefitness?retryWrites=true&w=majority&appName=Cluster0';
 
 let connectionPromise = null;
 
